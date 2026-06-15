@@ -39,6 +39,10 @@ export async function api(path, opts = {}) {
   }
 
   if (!res.ok) {
+    if (res.status === 401 && getAuth()) {
+      clearAuth()
+      window.location.href = '/login'
+    }
     throw new Error(data?.error || `Error ${res.status}`)
   }
   return data
