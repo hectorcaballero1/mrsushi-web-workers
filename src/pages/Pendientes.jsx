@@ -46,6 +46,10 @@ function Ticket({ order, stationKey, onAdvanced }) {
   const id = orderId(order)
   const min = elapsed(order.createdAt)
 
+  const stepData = order.steps?.[stationKey] ?? {}
+  const isTaken = !!stepData.startedAt && !stepData.endedAt
+  const label = isTaken ? 'Marcar listo' : 'Tomar'
+
   async function advance() {
     setLoading(true)
     try {
@@ -55,7 +59,11 @@ function Ticket({ order, stationKey, onAdvanced }) {
       })
       onAdvanced()
     } catch (err) {
-      alert(err.message || 'Error al avanzar el pedido')
+      if (err.status === 409) {
+        onAdvanced()
+      } else {
+        alert(err.message || 'Error al avanzar el pedido')
+      }
     } finally {
       setLoading(false)
     }
@@ -96,7 +104,7 @@ function Ticket({ order, stationKey, onAdvanced }) {
         disabled={loading}
         className="mt-4 w-full rounded-lg bg-salmon px-4 py-2 text-sm font-semibold text-white transition hover:bg-salmonDark disabled:opacity-50"
       >
-        {loading ? 'Procesando…' : 'Marcar listo'}
+        {loading ? 'Procesando…' : label}
       </button>
     </div>
   )
