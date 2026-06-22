@@ -3,7 +3,20 @@ const AUTH_KEY = 'mrsushi_auth'
 
 export function getAuth() {
   const raw = localStorage.getItem(AUTH_KEY)
-  return raw ? JSON.parse(raw) : null
+  if (!raw) return null
+  const auth = JSON.parse(raw)
+  // Sesión inválida o token vencido → limpiar y tratar como no logueado
+  if (!auth?.token || isTokenExpired(auth.token)) {
+    clearAuth()
+    return null
+  }
+  return auth
+}
+
+export function isTokenExpired(token) {
+  const claims = decodeJwt(token)
+  if (!claims.exp) return false // sin exp → no podemos saberlo, lo dejamos pasar
+  return claims.exp <= Date.now() / 1000
 }
 
 export function setAuth(auth) {
