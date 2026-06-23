@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api/client'
 
 const STATUS_LABELS = {
@@ -6,6 +6,7 @@ const STATUS_LABELS = {
   cocinando: 'Cocinando',
   empacando: 'Empacando',
   repartiendo: 'Repartiendo',
+  entregando_a_rappi: 'Entregando a Rappi',
   entregado: 'Entregado',
 }
 
@@ -14,103 +15,123 @@ const STATUS_DOT = {
   cocinando: 'bg-status-cocinando',
   empacando: 'bg-status-empacando',
   repartiendo: 'bg-status-repartiendo',
+  entregando_a_rappi: 'bg-station-rappi',
   entregado: 'bg-status-entregado',
+}
+
+function orderId(o) {
+  return o.SK?.replace('ORDER#', '') || o.id || ''
 }
 
 function elapsed(createdAt) {
   if (!createdAt) return '—'
-  return Math.round((Date.now() - new Date(createdAt).getTime()) / 60000) + ' min'
+  return Math.round((Date.now() - new Date(createdAt).getTime()) / 60000) + 'm'
 }
 
+const selectClass =
+  'rounded-lg border border-shoyu/20 bg-white px-3 py-1.5 text-sm text-shoyu focus:border-salmon focus:outline-none focus:ring-2 focus:ring-salmon/30'
+
 export default function Dashboard() {
-  const [summary, setSummary] = useState(null)
-  const [recent, setRecent] = useState([])
+  const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [statusFilter, setStatusFilter] = useState('')
+  const [sourceFilter, setSourceFilter] = useState('')
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [dash, orders] = await Promise.all([
-          api('/dashboard'),
-          api('/orders'),
-        ])
-        setSummary(dash.porStatus || {})
-        const sorted = (Array.isArray(orders) ? orders : [])
-          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-        setRecent(sorted.slice(0, 10))
-      } catch (err) {
-        setError(err.message)
-      } finally {
-        setLoading(false)
-      }
+  async function load() {
+    setLoading(true)
+    setError(null)
+    try {
+      const data = await api('/orders')
+      setOrders(Array.isArray(data) ? data : [])
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
     }
-    load()
-  }, [])
+  }
 
-  if (loading) return (
-    <p className="py-20 text-center text-sm text-shoyu/40">Cargando…</p>
-  )
+  useEffect(() => { load() }, [])
+
+  const rows = useMemo(() => {
+    return orders
+      .filter((o) => (!statusFilter || o.status === statusFilter))
+      .filter((o) => (!sourceFilter || o.source === sourceFilter))
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+  }, [orders, statusFilter, sourceFilter])
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="font-display text-2xl font-bold text-shoyu">
+          Pedidos <span className="text-shoyu/40">({rows.length})</span>
+        </h1>
+        <div className="flex items-center gap-2">
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={selectClass}>
+            <option value="">Todos los estados</option>
+            {Object.entries(STATUS_LABELS).map(([k, label]) => (
+              <option key={k} value={k}>{label}</option>
+            ))}
+          </select>
+          <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} className={selectClass}>
+            <option value="">Todos los orígenes</option>
+            <option value="web">Web</option>
+            <option value="rappi">Rappi</option>
+          </select>
+          <button onClick={load} className="rounded-lg border border-shoyu/20 px-3 py-1.5 text-sm text-shoyu transition hover:border-salmon hover:text-salmon">
+            Refrescar
+          </button>
+        </div>
+      </div>
+
       {error && (
-        <p className="rounded-lg bg-alert/10 px-4 py-3 text-sm text-alert">{error}</p>
+        <p className="rounded-lg bg-alert/10 px-4 py-3 text-sm text-alert">
+          {error} <button onClick={load} className="ml-2 underline">Reintentar</button>
+        </p>
       )}
 
-      <section className="grid grid-cols-2 gap-4 sm:grid-cols-5">
-        {Object.keys(STATUS_LABELS).map((key) => (
-          <div key={key} className="rounded-2xl bg-white p-5 shadow-sm">
-            <div className="mb-2 flex items-center gap-2">
-              <span className={`h-2.5 w-2.5 rounded-full ${STATUS_DOT[key]}`} />
-              <p className="text-xs uppercase tracking-wide text-shoyu/50">{STATUS_LABELS[key]}</p>
-            </div>
-            <p className="font-display text-3xl font-bold text-shoyu">
-              {summary?.[key] ?? '—'}
-            </p>
-          </div>
-        ))}
-      </section>
-
-      <section>
-        <h2 className="mb-3 font-display text-lg font-bold text-shoyu">Pedidos recientes</h2>
-        <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
-          {recent.length === 0 ? (
-            <p className="p-8 text-center text-sm text-shoyu/40">Sin pedidos aún.</p>
-          ) : (
-            <table className="w-full text-left text-sm">
-              <thead className="bg-ink/5 text-xs uppercase tracking-wide text-shoyu/50">
-                <tr>
-                  <th className="px-4 py-3">Pedido</th>
-                  <th className="px-4 py-3">Estado</th>
-                  <th className="px-4 py-3">Origen</th>
-                  <th className="px-4 py-3">Tiempo</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-shoyu/5">
-                {recent.map((o) => {
-                  const id = o.SK?.replace('ORDER#', '') || o.id || ''
-                  return (
-                    <tr key={id}>
-                      <td className="px-4 py-3 font-mono font-semibold text-shoyu">
-                        #{id.slice(0, 8)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center gap-2">
-                          <span className={`h-2 w-2 rounded-full ${STATUS_DOT[o.status] || 'bg-shoyu/20'}`} />
-                          {STATUS_LABELS[o.status] || o.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 capitalize text-shoyu/70">{o.source}</td>
-                      <td className="px-4 py-3 text-shoyu/70">{elapsed(o.createdAt)}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </section>
+      <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
+        {loading ? (
+          <p className="p-8 text-center text-sm text-shoyu/40">Cargando…</p>
+        ) : rows.length === 0 ? (
+          <p className="p-8 text-center text-sm text-shoyu/40">Sin pedidos para este filtro.</p>
+        ) : (
+          <table className="w-full text-left text-sm">
+            <thead className="bg-ink/5 text-xs uppercase tracking-wide text-shoyu/50">
+              <tr>
+                <th className="px-4 py-3">Pedido</th>
+                <th className="px-4 py-3">Estado</th>
+                <th className="px-4 py-3">Origen</th>
+                <th className="px-4 py-3">Cliente</th>
+                <th className="px-4 py-3 text-right">Total</th>
+                <th className="px-4 py-3 text-right">Tiempo</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-shoyu/5">
+              {rows.map((o) => {
+                const id = orderId(o)
+                return (
+                  <tr key={id} className="hover:bg-paper/60">
+                    <td className="px-4 py-3 font-mono font-semibold text-shoyu">#{id.slice(0, 8)}</td>
+                    <td className="px-4 py-3">
+                      <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                        <span className={`h-2 w-2 rounded-full ${STATUS_DOT[o.status] || 'bg-shoyu/20'}`} />
+                        {STATUS_LABELS[o.status] || o.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 capitalize text-shoyu/70">{o.source}</td>
+                    <td className="px-4 py-3 text-shoyu/70">{o.customer?.name || '—'}</td>
+                    <td className="px-4 py-3 text-right text-shoyu/70">
+                      {o.total != null ? `S/ ${Number(o.total).toFixed(2)}` : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right text-shoyu/70">{elapsed(o.createdAt)}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   )
 }

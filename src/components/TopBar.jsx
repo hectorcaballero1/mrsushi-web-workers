@@ -5,6 +5,12 @@ import { sedeName, ROLE_LABELS } from '../lib/sedes'
 const navLink = ({ isActive }) =>
   `text-sm font-medium transition ${isActive ? 'text-salmon' : 'text-shoyu/60 hover:text-shoyu'}`
 
+const STATION_LINKS = [
+  { to: '/cocina',   label: 'Cocina',   roles: ['cocinero', 'admin'] },
+  { to: '/empacar',  label: 'Empacar',  roles: ['despachador', 'admin'] },
+  { to: '/repartir', label: 'Repartir', roles: ['delivery', 'admin'] },
+]
+
 export default function TopBar() {
   const { user, logout } = useAuth()
 
@@ -19,7 +25,9 @@ export default function TopBar() {
         </div>
 
         <nav className="flex items-center gap-6">
-          <NavLink to="/pendientes" className={navLink}>Pendientes</NavLink>
+          {STATION_LINKS.filter((l) => l.roles.includes(user?.role)).map((l) => (
+            <NavLink key={l.to} to={l.to} className={navLink}>{l.label}</NavLink>
+          ))}
           <NavLink to="/dashboard" className={navLink}>Dashboard</NavLink>
           {user?.role === 'admin' && (
             <NavLink to="/staff" className={navLink}>Staff</NavLink>
