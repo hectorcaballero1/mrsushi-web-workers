@@ -6,7 +6,9 @@ const navLink = ({ isActive }) =>
   `text-sm font-medium transition ${isActive ? 'text-salmon' : 'text-shoyu/60 hover:text-shoyu'}`
 
 const STATION_LINKS = [
+  { to: '/admision', label: 'Admisión', roles: ['cocinero', 'admin'] },
   { to: '/cocina',   label: 'Cocina',   roles: ['cocinero', 'admin'] },
+  { to: '/revision', label: 'Revisión', roles: ['despachador', 'admin'] },
   { to: '/empacar',  label: 'Empacar',  roles: ['despachador', 'admin'] },
   { to: '/repartir', label: 'Repartir', roles: ['delivery', 'admin'] },
 ]
