@@ -7,7 +7,9 @@ const linkInactive = 'text-paper/70 hover:bg-inkLight hover:text-paper'
 
 // Páginas de operación por estación, visibles según el rol del trabajador.
 const STATION_LINKS = [
+  { to: '/admision', label: 'Admisión', roles: ['cocinero', 'admin'] },
   { to: '/cocina',   label: 'Cocina',   roles: ['cocinero', 'admin'] },
+  { to: '/revision', label: 'Revisión', roles: ['despachador', 'admin'] },
   { to: '/empacar',  label: 'Empacar',  roles: ['despachador', 'admin'] },
   { to: '/repartir', label: 'Repartir', roles: ['delivery', 'admin'] },
 ]

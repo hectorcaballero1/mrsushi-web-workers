@@ -3,20 +3,24 @@ import { api } from '../api/client'
 
 const STATUS_LABELS = {
   recibido: 'Recibido',
+  en_revision: 'En revisión',
   cocinando: 'Cocinando',
   empacando: 'Empacando',
   repartiendo: 'Repartiendo',
   entregando_a_rappi: 'Entregando a Rappi',
   entregado: 'Entregado',
+  cancelado: 'Cancelado',
 }
 
 const STATUS_DOT = {
   recibido: 'bg-status-recibido',
+  en_revision: 'bg-status-en_revision',
   cocinando: 'bg-status-cocinando',
   empacando: 'bg-status-empacando',
   repartiendo: 'bg-status-repartiendo',
   entregando_a_rappi: 'bg-station-rappi',
   entregado: 'bg-status-entregado',
+  cancelado: 'bg-status-cancelado',
 }
 
 function orderId(o) {
@@ -118,6 +122,9 @@ export default function Dashboard() {
                         <span className={`h-2 w-2 rounded-full ${STATUS_DOT[o.status] || 'bg-shoyu/20'}`} />
                         {STATUS_LABELS[o.status] || o.status}
                       </span>
+                      {o.motivo && (o.status === 'en_revision' || o.status === 'cancelado') && (
+                        <p className="mt-0.5 text-xs italic text-shoyu/50">{o.motivo}</p>
+                      )}
                     </td>
                     <td className="px-4 py-3 capitalize text-shoyu/70">{o.source}</td>
                     <td className="px-4 py-3 text-shoyu/70">{o.customer?.name || '—'}</td>

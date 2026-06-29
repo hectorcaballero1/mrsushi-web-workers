@@ -21,10 +21,12 @@ export default {
         },
         status: {
           recibido: '#9CA3AF',
+          en_revision: '#C77D3A',
           cocinando: '#E8623A',
           empacando: '#D4A857',
           repartiendo: '#5B7DB1',
           entregado: '#2F4A3C',
+          cancelado: '#8B3A3A',
         },
       },
       fontFamily: {

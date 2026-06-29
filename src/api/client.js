@@ -69,3 +69,19 @@ export async function login(email, password, tenantId) {
     body: JSON.stringify({ email, password, role: 'worker', tenantId }),
   })
 }
+
+// Admisión: el cocinero toma el pedido o lo deriva a revisión.
+export async function tomarOrden(id, decision, motivo) {
+  return api(`/orders/${id}/tomar-orden`, {
+    method: 'POST',
+    body: JSON.stringify({ decision, ...(motivo ? { motivo } : {}) }),
+  })
+}
+
+// Revisión: el despachador cancela o re-envía a cocina.
+export async function revisar(id, decision, motivo) {
+  return api(`/orders/${id}/revisar`, {
+    method: 'POST',
+    body: JSON.stringify({ decision, ...(motivo ? { motivo } : {}) }),
+  })
+}

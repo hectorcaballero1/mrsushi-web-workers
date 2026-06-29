@@ -3,6 +3,8 @@ import { AuthProvider } from './context/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import AppLayout from './components/AppLayout'
 import StationBoard from './components/StationBoard'
+import AdmisionBoard from './components/AdmisionBoard'
+import RevisionBoard from './components/RevisionBoard'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Staff from './pages/Staff'
@@ -21,6 +23,23 @@ export default function App() {
           }
         >
           <Route path="/dashboard" element={<Dashboard />} />
+
+          <Route
+            path="/admision"
+            element={
+              <ProtectedRoute roles={['cocinero', 'admin']}>
+                <AdmisionBoard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/revision"
+            element={
+              <ProtectedRoute roles={['despachador', 'admin']}>
+                <RevisionBoard />
+              </ProtectedRoute>
+            }
+          />
 
           <Route
             path="/cocina"
