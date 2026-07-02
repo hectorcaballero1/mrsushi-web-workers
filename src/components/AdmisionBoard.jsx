@@ -60,6 +60,9 @@ function Ticket({ order, onDone }) {
       {order.customer?.name && (
         <p className="mt-2 text-sm font-medium text-shoyu">{order.customer.name}</p>
       )}
+      {order.customer?.phone && (
+        <p className="text-xs text-shoyu/60">{order.customer.phone}</p>
+      )}
 
       <ul className="mt-2 space-y-0.5 text-sm text-shoyu/70">
         {(order.items || []).map((item, i) => (

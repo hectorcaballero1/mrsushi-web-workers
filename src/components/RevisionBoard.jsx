@@ -53,6 +53,9 @@ function Ticket({ order, onDone }) {
       {order.customer?.name && (
         <p className="mt-2 text-sm font-medium text-shoyu">{order.customer.name}</p>
       )}
+      {order.customer?.phone && (
+        <p className="text-xs text-shoyu/60">{order.customer.phone}</p>
+      )}
 
       {order.motivo && (
         <div className="mt-2 rounded-lg bg-status-en_revision/10 px-3 py-2 text-sm text-shoyu">
