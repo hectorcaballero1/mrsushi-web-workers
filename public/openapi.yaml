@@ -1,0 +1,408 @@
+openapi: 3.0.3
+info:
+  title: Mr Sushi · API Serverless
+  description: >
+    API del backend serverless de Mr Sushi (AWS API Gateway + Lambda + DynamoDB +
+    Step Functions + EventBridge). Los endpoints protegidos usan un Lambda Authorizer
+    que valida un JWT; enviá el token en el header `Authorization` (con o sin prefijo `Bearer `).
+  version: "1.0.0"
+
+servers:
+  - url: https://27asp5lb3f.execute-api.us-east-1.amazonaws.com/dev
+    description: Stage dev
+
+tags:
+  - name: Auth
+    description: Registro y login
+  - name: Catálogo
+    description: Productos del menú
+  - name: Pedidos
+    description: Creación y avance de pedidos
+  - name: Admin
+    description: Gestión de staff y dashboard (solo admin)
+  - name: Webhooks
+    description: Callbacks externos (Rappi)
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        JWT emitido por POST /auth/login. Lo valida el Lambda Authorizer.
+        Header `Authorization: Bearer <token>`.
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string, example: "Invalid credentials" }
+    OrderItem:
+      type: object
+      properties:
+        productId: { type: string, example: "prod-123" }
+        name: { type: string, example: "California Roll" }
+        category: { type: string, example: "roll_frio" }
+        price: { type: number, example: 25.90 }
+        qty: { type: integer, example: 2 }
+    Order:
+      type: object
+      properties:
+        PK: { type: string, example: "TENANT#mrsushi-surco" }
+        SK: { type: string, example: "ORDER#a1b2c3" }
+        orderId: { type: string }
+        source: { type: string, enum: [web, rappi], example: web }
+        status:
+          type: string
+          enum: [recibido, en_revision, cocinando, empacando, repartiendo, entregando_a_rappi, entregado, cancelado]
+        total: { type: string, example: "51.80" }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/OrderItem' }
+        customer: { type: object }
+        createdAt: { type: string, format: date-time }
+        tieneFria: { type: boolean }
+        tieneCaliente: { type: boolean }
+
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Registrar un cliente
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, example: "cliente@correo.com" }
+                password: { type: string, example: "secreto123" }
+                name: { type: string, example: "Ana Pérez" }
+      responses:
+        '201':
+          description: Usuario creado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { userId: { type: string } }
+        '400': { description: Faltan email o password, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: El usuario ya existe, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login (cliente o trabajador)
+      description: >
+        Para `role=worker` es obligatorio `tenantId`. El token devuelto se usa como
+        Bearer en los endpoints protegidos.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, example: "cocinero@mrsushi.com" }
+                password: { type: string, example: "secreto123" }
+                role: { type: string, enum: [customer, worker], default: customer }
+                tenantId: { type: string, example: "mrsushi-surco", description: "Requerido si role=worker" }
+      responses:
+        '200':
+          description: Token emitido
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  userId: { type: string }
+                  role: { type: string }
+        '400': { description: Faltan campos, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { description: Credenciales inválidas, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /products:
+    get:
+      tags: [Catálogo]
+      summary: Listar productos del menú
+      responses:
+        '200':
+          description: Lista de productos
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: object }
+
+  /orders:
+    post:
+      tags: [Pedidos]
+      summary: Crear un pedido
+      description: Público (guest checkout + Rappi). No requiere token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenantId, items]
+              properties:
+                tenantId: { type: string, example: "mrsushi-surco" }
+                source: { type: string, enum: [web, rappi], default: web }
+                items:
+                  type: array
+                  items: { $ref: '#/components/schemas/OrderItem' }
+                customer: { type: object }
+                externalRef: { type: string, description: "Requerido si source=rappi" }
+                customerId: { type: string, description: "Opcional (web). Habilita GET /orders?mine=true" }
+      responses:
+        '201':
+          description: Pedido creado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orderId: { type: string }
+                  status: { type: string, example: recibido }
+        '400': { description: Falta tenantId, items o externalRef, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    get:
+      tags: [Pedidos]
+      summary: Listar pedidos (cola de trabajo o historial del cliente)
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, example: recibido }
+          description: Filtra la cola del tenant por estado (GSI2)
+        - name: mine
+          in: query
+          schema: { type: boolean }
+          description: Si es true, devuelve el historial del cliente autenticado (GSI1)
+      responses:
+        '200':
+          description: Lista de pedidos
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Order' }
+        '401': { description: Token sin userId (mine=true), content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: Falta tenantId en el token, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /orders/{id}:
+    get:
+      tags: [Pedidos]
+      summary: Obtener un pedido por id
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Pedido
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '403': { description: Falta tenantId, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: No encontrado, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /orders/{id}/advance:
+    post:
+      tags: [Pedidos]
+      summary: Avanzar un paso del workflow (tomar / completar)
+      description: >
+        Reanuda un paso de la State Machine vía task token. Roles permitidos por paso:
+        cocina_fria/cocina_caliente → cocinero; empacar/entregar_rappi → despachador;
+        repartir → delivery (admin puede todos).
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [step]
+              properties:
+                step:
+                  type: string
+                  enum: [cocina_fria, cocina_caliente, empacar, repartir, entregar_rappi]
+      responses:
+        '200':
+          description: Paso tomado o completado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orderId: { type: string }
+                  step: { type: string }
+                  phase: { type: string, enum: [taken, completed] }
+        '403': { description: Rol no autorizado, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: Pedido no encontrado, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: Ticket ya tomado por otro trabajador, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /orders/{id}/tomar-orden:
+    post:
+      tags: [Pedidos]
+      summary: Admisión — el cocinero toma o deriva a revisión
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                decision: { type: string, enum: [tomar, derivar], default: tomar }
+                motivo: { type: string, description: "Requerido si decision=derivar" }
+      responses:
+        '200':
+          description: Decisión aplicada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orderId: { type: string }
+                  decision: { type: string }
+        '400': { description: decision o motivo inválido, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: Rol no autorizado (cocinero/admin), content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: Pedido no encontrado, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: Pedido aún registrándose o ya tomado, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /orders/{id}/revisar:
+    post:
+      tags: [Pedidos]
+      summary: Revisión — el despachador cancela o reenvía a cocina
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [cancelar, reenviar] }
+                motivo: { type: string }
+      responses:
+        '200':
+          description: Decisión aplicada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orderId: { type: string }
+                  decision: { type: string }
+        '400': { description: decision inválida, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: Rol no autorizado (despachador/admin), content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: Pedido no encontrado, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: Revisión aún no lista o ya en curso, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /admin/staff:
+    post:
+      tags: [Admin]
+      summary: Crear un trabajador (solo admin)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password, role]
+              properties:
+                name: { type: string }
+                email: { type: string }
+                password: { type: string }
+                role: { type: string, enum: [cocinero, despachador, delivery] }
+      responses:
+        '201':
+          description: Trabajador creado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { userId: { type: string } }
+        '400': { description: Faltan campos o rol inválido, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: Solo admin, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: El usuario ya existe, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    get:
+      tags: [Admin]
+      summary: Listar trabajadores del tenant (solo admin)
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Lista de staff (sin passwordHash)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: object }
+        '403': { description: Solo admin, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /dashboard:
+    get:
+      tags: [Admin]
+      summary: Conteo de pedidos por estado (solo admin)
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Métricas
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  porStatus: { type: object, additionalProperties: { type: integer } }
+                  tenantId: { type: string }
+        '403': { description: Solo admin o falta tenantId, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /webhooks/rappi/delivered:
+    post:
+      tags: [Webhooks]
+      summary: Confirmar entrega desde Rappi
+      description: >
+        Autenticado por header `x-api-key` (RAPPI_WEBHOOK_SECRET), NO por JWT.
+        Busca el pedido por externalRef (GSI3) y reanuda el paso entregar_rappi.
+      parameters:
+        - name: x-api-key
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [orderId]
+              properties:
+                orderId: { type: string, description: "externalRef del pedido en Rappi" }
+      responses:
+        '200': { description: Entrega confirmada }
+        '400': { description: Falta orderId, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { description: x-api-key inválida, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: Pedido no encontrado, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
